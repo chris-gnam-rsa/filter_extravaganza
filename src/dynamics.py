@@ -31,12 +31,20 @@ def attdyn(_, X, J, dw_input):
     dX = np.concatenate((dq, dw))
     return dX
 
+
 def propagate(X, dt, J=np.eye(3), dw_input = np.zeros(3)):
     X = rk4(attdyn, dt, X, J, dw_input)
     X[:4] = X[:4] / np.linalg.norm(X[:4])
     return X
 
-
+def propagate_quaternion(q, omega, dt):
+    # Quaternion kinematics (Bq matrix)
+    Bq = np.zeros((4,3))
+    Bq[:3,:] = skew(q[:3]) + np.diag([q[3], q[3], q[3]])
+    Bq[3,:] = -q[:3]
+    dq = 0.5 * Bq @ omega
+    q_next = q + dq * dt
+    return q_next / np.linalg.norm(q_next)
 
 def cov_dot(P, F, G, Qc):
     # P is 6x6

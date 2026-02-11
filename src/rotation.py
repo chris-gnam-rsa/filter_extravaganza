@@ -69,12 +69,9 @@ class Rotation:
 		return q
 
 	@staticmethod
-	def _matrix_from_quaternion(quat, scalar_first=True):
+	def _matrix_from_quaternion(quat):
 		q = Rotation._validate_quaternion(quat)
-		if scalar_first:
-			w, x, y, z = q
-		else:
-			x, y, z, w = q
+		x, y, z, w = q
 
 		xx = x * x
 		yy = y * y
@@ -113,7 +110,7 @@ class Rotation:
 
 	@classmethod
 	def from_quaternion(cls, quat, scalar_first=True):
-		return cls(cls._matrix_from_quaternion(quat, scalar_first=scalar_first))
+		return cls(cls._matrix_from_quaternion(quat))
 
 	@classmethod
 	def from_euler(cls, angles, order="xyz", degrees=False):
