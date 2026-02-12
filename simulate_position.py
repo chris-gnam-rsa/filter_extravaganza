@@ -2,7 +2,7 @@ from src import create_stars, Camera, Rotation
 from src.dynamics import propagate
 from src.earth import lla
 from estimators.errors import plot_error_angles, filter_plot
-from estimators import MEKF_full
+from estimators import MEKF_position
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -107,11 +107,13 @@ def main():
     X[0, 4:7] = cam_ar0
 
     # Initialize filter estimate array:
-    X_hat = np.zeros((tsteps, 3+3))
-    sig3 = np.zeros((tsteps, 3+3))
+    N = 3 + 3 + 3 # Position, Attitude Error, Gyro Bias
+    X_hat = np.zeros((tsteps, N)) 
+    sig3 = np.zeros((tsteps, N))
 
-    X_hat[0, 0:3] = np.zeros(3) # Initial attitude error guess
-    X_hat[0, 3:6] = np.zeros(3) # Initial bias estimate
+    X_hat[0, 0:3] = cam_pos0 + np.random.randn(3) * 10000 # Initial position estimate
+    X_hat[0, 3:6] = np.zeros(3) # Initial attitude error
+    X_hat[0, 6:9] = np.zeros(3) # Initial bias estimate
 
     q_hat = np.zeros((tsteps, 4))
 
@@ -120,24 +122,34 @@ def main():
 
 
     # Initial estimation covariance:
+    pos_std = 10000
     angle_std = np.deg2rad(5)
     gyro_bias_std = 0.05
     P = np.diag([
+        pos_std, pos_std, pos_std,
         angle_std, angle_std, angle_std, 
         gyro_bias_std, gyro_bias_std, gyro_bias_std])**2 # Initial covariance guess
     
     sig3[0] = 3 * np.sqrt(np.diag(P))
 
     # Process noise covariance
-    Q = np.zeros((6, 6))
+    Q_pos = np.diag([1e-9, 1e-9, 1e-9])
+
+    Q_att = np.zeros((6, 6))
     sigu2 = sig_rrw**2
     sigv2 = sig_arw**2
     dt2 = dt**2
     dt3 = dt**3
-    Q[0:3, 0:3] = (sigv2*dt + (1/3)*sigu2*dt3)*np.eye(3)
-    Q[0:3, 3:6] = 0.5 * sigu2 * dt2 * np.eye(3)
-    Q[3:6, 0:3] = 0.5 * sigu2 * dt2 * np.eye(3)
-    Q[3:6, 3:6] = sigu2 * dt * np.eye(3)
+    Q_att[0:3, 0:3] = (sigv2*dt + (1/3)*sigu2*dt3)*np.eye(3)
+    Q_att[0:3, 3:6] = 0.5 * sigu2 * dt2 * np.eye(3)
+    Q_att[3:6, 0:3] = 0.5 * sigu2 * dt2 * np.eye(3)
+    Q_att[3:6, 3:6] = sigu2 * dt * np.eye(3)
+
+    Q = np.block([
+        [Q_pos, np.zeros((3, 6))],
+        [np.zeros((6, 3)), Q_att]
+    ])
+
 
     meas_std = np.array([pixel_noise_std])
 
@@ -192,7 +204,7 @@ def main():
         measured_rate[i+1] = w + gyro_bias[i+1] + sig_arw / np.sqrt(dt) * np.random.randn()
 
         # Run the MEKF:
-        X_hat[i+1], P, q_hat[i+1] = MEKF_full(
+        X_hat[i+1], P, q_hat[i+1] = MEKF_position(
             X_hat[i], P, q_hat[i], dt, meas_std, Q, 
             curr_star_meas_pix,
             curr_star_true,
@@ -209,17 +221,34 @@ def main():
 
     # Plot the results:
     t_array = np.arange(0, duration + dt, dt).flatten()
+
+    # Plot Position Residuals:
+    position_error = X_hat[:, 0:3] - cam_pos0
+    position_sig3 = sig3[:, 0:3]
+    plt.figure()
+    plt.subplot(3, 1, 1)
+    filter_plot(t_array, position_error[:, 0], position_sig3[:, 0], "Position X Error (m)")
+    plt.title("Position Estimation Errors")
+
+    plt.subplot(3, 1, 2)
+    filter_plot(t_array, position_error[:, 1], position_sig3[:, 1], "Position Y Error (m)")
+
+    plt.subplot(3, 1, 3)
+    filter_plot(t_array, position_error[:, 2], position_sig3[:, 2], "Position Z Error (m)")
+
     
+    # Plot Attitude Residuals:
     q_true = X[:, 0:4]
-    q_hat_sig3 = sig3[:, 0:3]
+    q_hat_sig3 = sig3[:, 3:6]
     plot_error_angles(t_array, q_hat, q_true, q_hat_sig3)
 
-    bias_error = np.rad2deg(X_hat[:, 3:6] - gyro_bias)
-    bias_sig3 = np.rad2deg(sig3[:, 3:6])
+
+    # Plot Bias Residuals:
+    bias_error = np.rad2deg(X_hat[:, 6:9] - gyro_bias)
+    bias_sig3 = np.rad2deg(sig3[:, 6:9])
 
     plt.figure()
     plt.subplot(3, 1, 1)
-    # Plot ERROR vs BOUNDS
     filter_plot(t_array, bias_error[:, 0], bias_sig3[:, 0], "Bias X Error (deg/s)")
     plt.title("Gyro Bias Estimation Errors")
 
