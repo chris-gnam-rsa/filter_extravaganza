@@ -17,7 +17,7 @@ from rsalib.units import Time
 def main():
     # Simulation Settings:
     num_stars = 1000
-    tsteps = 1000
+    tsteps = 50000
     dt = 1
     animate = False
     time = Epoch(datetime.datetime(2026, 2, 12, 0, 0, 0))
@@ -30,7 +30,7 @@ def main():
     cam_ar0 = np.array([0.1, 0.1, 0.1]) * np.pi / 180  # rad/s
     cam_quat0 = np.array([0, 0, 0, 1])
     cam_pos0 = lla(0, 0, 400e3)  # m
-    cam_vek0 = np.array([0, 0, 0])  #
+    cam_vel0 = np.array([0, 0, 0]) 
 
     # Measurement noise:
     pixel_noise_std = 1.0  # pixels
@@ -51,9 +51,9 @@ def main():
     # A good starting point is usually 1/10th of the noise density magnitude or derived from instability
     accel_bias_random_walk = 1.0e-4  # m/s^2/sqrt(s)
 
-    bias = np.zeros((tsteps, 3))
+    gyro_bias = np.zeros((tsteps, 3))
     measured_rate = np.zeros((tsteps, 3))
-    bias[0] = np.zeros(3)
+    gyro_bias[0] = np.zeros(3)
 
 
     # Create camera:
@@ -161,8 +161,8 @@ def main():
 
 
         # Simulate Gyro measurements:
-        bias[i+1] = bias[i] + sig_rrw * np.sqrt(dt) * np.random.randn()
-        measured_rate[i+1] = w + bias[i+1] + sig_arw / np.sqrt(dt) * np.random.randn()
+        gyro_bias[i+1] = gyro_bias[i] + sig_rrw * np.sqrt(dt) * np.random.randn()
+        measured_rate[i+1] = w + gyro_bias[i+1] + sig_arw / np.sqrt(dt) * np.random.randn()
 
         # Run the MEKF:
         X_hat[i+1], P, q_hat[i+1] = MEKF_attitude(
@@ -197,16 +197,19 @@ def main():
 
     plot_error_angles(t_array, q_hat, q_true, q_hat_sig3)
 
+    bias_error = X_hat[:, 3:6] - gyro_bias 
+
     plt.figure()
     plt.subplot(3, 1, 1)
-    filter_plot(t_array, X_hat[:, 3], sig3[:, 3], "Bias X (rad/s)")
+    # Plot ERROR vs BOUNDS
+    filter_plot(t_array, bias_error[:, 0], sig3[:, 3], "Bias X Error (rad/s)")
     plt.title("Gyro Bias Estimation Errors")
 
     plt.subplot(3, 1, 2)
-    filter_plot(t_array, X_hat[:, 4], sig3[:, 4], "Bias Y (rad/s)")
+    filter_plot(t_array, bias_error[:, 1], sig3[:, 4], "Bias Y Error (rad/s)")
 
     plt.subplot(3, 1, 3)
-    filter_plot(t_array, X_hat[:, 5], sig3[:, 5], "Bias Z (rad/s)")
+    filter_plot(t_array, bias_error[:, 2], sig3[:, 5], "Bias Z Error (rad/s)")
     plt.show()
 
 
