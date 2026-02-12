@@ -16,17 +16,17 @@ def Xi(q):
 
 
 def MEKF_attitude(X_hat, P, q_hat, dt, meas_std, Q, star_meas_pix, star_true, measured_rate, ax, ay, u0, v0):
-
-    # Recover attitude:
-    A_body_to_inertial = Rotation.from_quaternion(q_hat).matrix
-    A_inertial_to_body = A_body_to_inertial.T
-
+    # Extract measurement uncertainties:
     sigma_pixel = meas_std[0]  # Standard deviation in PIXELS
-    
-    # Predict:
-    b_pred = (A_inertial_to_body @ star_true.T).T
-    
+
     n_stars = star_meas_pix.shape[0]
+    if n_stars != 0:
+        # Recover attitude:
+        A_body_to_inertial = Rotation.from_quaternion(q_hat).matrix
+        A_inertial_to_body = A_body_to_inertial.T
+        
+        # Predict:
+        b_pred = (A_inertial_to_body @ star_true.T).T
     
     # Initialization for 2D measurements (2 rows per star)
     H = np.zeros((2 * n_stars, 6))

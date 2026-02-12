@@ -32,7 +32,7 @@ def filter_plot(time_array, error_array, sigma_array, ylabel):
                      color='gray', alpha=0.5, label='3-sigma bounds')
     plt.ylabel(ylabel)
     plt.grid()
-    plt.ylim(-np.mean(3*sigma_array)*1.1, np.mean(3*sigma_array)*1.1)
+    plt.ylim(-np.median(3*sigma_array)*1.5, np.median(3*sigma_array)*1.5)
 
 
 def plot_error_angles(time_array, q_hat, q_true, q_hat_sig3):
