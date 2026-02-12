@@ -111,7 +111,7 @@ def main():
     X_hat = np.zeros((tsteps, N)) 
     sig3 = np.zeros((tsteps, N))
 
-    X_hat[0, 0:3] = cam_pos0 + np.random.randn(3) * 10000 # Initial position estimate
+    X_hat[0, 0:3] = cam_pos0 + np.random.randn(3) * 100000 # Initial position estimate
     X_hat[0, 3:6] = np.zeros(3) # Initial attitude error
     X_hat[0, 6:9] = np.zeros(3) # Initial bias estimate
 
@@ -122,7 +122,7 @@ def main():
 
 
     # Initial estimation covariance:
-    pos_std = 10000
+    pos_std = 100000
     angle_std = np.deg2rad(5)
     gyro_bias_std = 0.05
     P = np.diag([

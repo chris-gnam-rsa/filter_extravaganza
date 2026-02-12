@@ -27,9 +27,17 @@ def rotations2errors(R_true: np.ndarray, R_est: np.ndarray) -> np.ndarray:
 def filter_plot(time_array, error_array, sigma_array, ylabel):
     plt.plot(time_array, error_array)
     plt.fill_between(time_array,
-                     -3*sigma_array,
-                     3*sigma_array,
-                     color='gray', alpha=0.5, label='3-sigma bounds')
+                     -1 * sigma_array,
+                     1 * sigma_array,
+                     color='green', alpha=0.25, label='1-sigma bounds')
+    plt.fill_between(time_array,
+                     -2 * sigma_array,
+                     2 * sigma_array,
+                     color='yellow', alpha=0.2, label='2-sigma bounds')
+    plt.fill_between(time_array,
+                     -3 * sigma_array,
+                     3 * sigma_array,
+                     color='red', alpha=0.15, label='3-sigma bounds')
     plt.ylabel(ylabel)
     plt.grid()
     plt.ylim(-np.median(3*sigma_array)*1.5, np.median(3*sigma_array)*1.5)
