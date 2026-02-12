@@ -3,7 +3,7 @@ from src.dynamics import propagate
 from src.earth import lla
 from estimators import startracker
 from estimators.errors import rotations2errors, plot_error_angles, filter_plot
-from estimators.mekf import MEKF
+from estimators import MEKF_attitude
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -16,7 +16,7 @@ from rsalib.units import Time
 
 def main():
     # Simulation Settings:
-    num_stars = 5000
+    num_stars = 1000
     tsteps = 1000
     dt = 1
     animate = False
@@ -24,19 +24,32 @@ def main():
 
     tle_catalog = "/Users/chrisgnam/source/repos/angl/angl/data/spacetrack_catalog.pkl"
 
+    max_stars_used = 10
 
     # Initial states:
-    w0 = 0.5 * np.array([0.1, 0.1, 0.1]) * np.pi / 180  # rad/s
-    q0 = np.array([0, 0, 0, 1])
-    r0 = lla(0, 0, 400e3)  # m
-    v0 = np.array([0, 0, 0])  #
+    cam_ar0 = np.array([0.1, 0.1, 0.1]) * np.pi / 180  # rad/s
+    cam_quat0 = np.array([0, 0, 0, 1])
+    cam_pos0 = lla(0, 0, 400e3)  # m
+    cam_vek0 = np.array([0, 0, 0])  #
 
     # Measurement noise:
     pixel_noise_std = 1.0  # pixels
 
-    # Gyro noise parameters:
-    sigma_u = 0.01 * np.pi / 180  # rad/s^0.5
-    sigma_v = 0.001 * np.pi / 180  # rad/s / sqrt(s)
+    # Gyroscope Noise Density (Angle Random Walk)
+    # Spec: ~0.01 deg/s/sqrt(Hz)
+    sig_arw = 0.01 * (np.pi / 180.0)  # ~1.74e-4 rad/s/sqrt(Hz)
+
+    # Gyroscope Bias Diffusion (Rate Random Walk)
+    # Spec: ~2.0 deg/hour/sqrt(Hz) ... hard to find exact, often tuned experimentally
+    sig_rrw = 2.0e-5  # rad/s/sqrt(s)
+
+    # Accelerometer Noise Density (Velocity Random Walk)
+    # Spec: ~150 ug/sqrt(Hz) -> ~0.0015 m/s^2/sqrt(Hz)
+    accel_noise_density = 150e-6 * 9.81  # ~0.00147 m/s^2/sqrt(Hz)
+
+    # Accelerometer Bias Diffusion (Acceleration Random Walk)
+    # A good starting point is usually 1/10th of the noise density magnitude or derived from instability
+    accel_bias_random_walk = 1.0e-4  # m/s^2/sqrt(s)
 
     bias = np.zeros((tsteps, 3))
     measured_rate = np.zeros((tsteps, 3))
@@ -63,8 +76,8 @@ def main():
 
     # Initialize:
     X = np.zeros((tsteps, 4+3))
-    X[0, 0:4] = q0
-    X[0, 4:7] = w0
+    X[0, 0:4] = cam_quat0
+    X[0, 4:7] = cam_ar0
 
     # Filter Initialize:
     N = 3+3
@@ -72,13 +85,15 @@ def main():
     X_hat[0, 0:3] = np.zeros(3) # Initial attitude error guess
     X_hat[0, 3:6] = np.zeros(3) # Initial bias estimate
 
-    angle_std = np.deg2rad(10)
+    angle_std = np.deg2rad(5)
 
     q_hat = np.zeros((tsteps, 4))
-    q_hat[0] = Rotation.from_euler([angle_std * np.random.randn(), angle_std * np.random.randn(), angle_std * np.random.randn()], order="xyz").quaternion # Initial attitude guess
-    # q_hat[0] = q0
 
-    bias_std = 0.5
+    # Assume initialized with a static startracker solution, so small error
+    tetra_error = np.deg2rad(0.5)
+    q_hat[0] = Rotation.from_euler([tetra_error * np.random.randn(), tetra_error * np.random.randn(), tetra_error * np.random.randn()], order="xyz").quaternion
+
+    bias_std = 0.05
     P = np.diag([
         angle_std, angle_std, angle_std, 
         bias_std, bias_std, bias_std])**2 # Initial covariance guess
@@ -87,8 +102,8 @@ def main():
 
     # Process noise covariance
     Q = np.zeros((6, 6))
-    sigv2 = sigma_v**2
-    sigu2 = sigma_u**2
+    sigu2 = sig_rrw**2
+    sigv2 = sig_arw**2
     dt2 = dt**2
     dt3 = dt**3
     Q[0:3, 0:3] = (sigv2*dt + (1/3)*sigu2*dt3)*np.eye(3)
@@ -96,11 +111,13 @@ def main():
     Q[3:6, 0:3] = 0.5 * sigu2 * dt2 * np.eye(3)
     Q[3:6, 3:6] = sigu2 * dt * np.eye(3)
 
-    pixel_size = camera.sensor_size[0] / camera.resolution[0]  # mm/pixel
-    star_vec_std = pixel_noise_std * pixel_size / camera.focal_length
-    meas_std = np.array([star_vec_std]) # radians
-    # meas_std[0] = 1e-1
+    meas_std = np.array([pixel_noise_std])
     
+    # Camera model parameters:
+    ax = camera.focal_length * camera.resolution[0] / camera.sensor_size[0]
+    ay = camera.focal_length * camera.resolution[1] / camera.sensor_size[1]
+    u0 = camera.resolution[0] / 2
+    v0 = camera.resolution[1] / 2
 
     if animate:
         plt.ion()
@@ -121,25 +138,40 @@ def main():
         q = X[i, 0:4]
         w = X[i, 4:7]
         camera.orientation = Rotation.from_quaternion(q)
-        camera.position = r0
+        camera.position = cam_pos0
 
         # Simulate star measurements:
         star_pix, valid = camera.project_directions(stars)
         star_meas = star_pix + np.random.normal(0, pixel_noise_std, size=star_pix.shape)
-        star_meas_vec = camera.pixel_to_rays_body(star_meas)
-        star_true = stars[valid]
 
-        [sat_r, sat_v, _] = satellites.propagate(time)
-        sat_pix, valid = camera.project_points(sat_r)
-        time = time + Time(dt, "second")
+        # Obtain corresponding true stars
+        star_true = stars[valid] 
+
+        # Limit to number of stars used by filter:
+        if star_meas.shape[0] > max_stars_used:
+            curr_star_meas_pix = star_meas[0:max_stars_used, :]
+            curr_star_true = star_true[0:max_stars_used, :]
+        else:
+            curr_star_meas_pix = star_meas
+            curr_star_true = star_true
+
+        # [sat_r, sat_v, _] = satellites.propagate(time)
+        # sat_pix, valid = camera.project_points(sat_r)
+        # time = time + Time(dt, "second")
 
 
         # Simulate Gyro measurements:
-        bias[i+1] = bias[i] + sigma_u * np.sqrt(dt) * np.random.randn()
-        measured_rate[i+1] = w + bias[i+1] + sigma_v / np.sqrt(dt) * np.random.randn()
+        bias[i+1] = bias[i] + sig_rrw * np.sqrt(dt) * np.random.randn()
+        measured_rate[i+1] = w + bias[i+1] + sig_arw / np.sqrt(dt) * np.random.randn()
 
         # Run the MEKF:
-        X_hat[i+1], P, q_hat[i+1] = MEKF(X_hat[i], P, q_hat[i], dt, meas_std, Q, star_meas_vec, star_true, measured_rate[i+1])
+        X_hat[i+1], P, q_hat[i+1] = MEKF_attitude(
+            X_hat[i], P, q_hat[i], dt, meas_std, Q, 
+            curr_star_meas_pix,
+            curr_star_true, 
+            measured_rate[i+1], 
+            ax, ay, u0, v0
+        )
         sig3[i+1] = 3 * np.sqrt(np.diag(P))
 
         # Propagate the truth:
@@ -149,7 +181,7 @@ def main():
         if animate:
             scatter.set_offsets(star_pix)
             scatter_star_meas.set_offsets(star_meas)
-            scatter_sat.set_offsets(sat_pix)
+            # scatter_sat.set_offsets(sat_pix)
             fig.canvas.draw_idle()
             plt.pause(0.01)
 

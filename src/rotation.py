@@ -40,7 +40,7 @@ class Rotation:
 			y = (m[1, 2] + m[2, 1]) / s
 			z = 0.25 * s
 
-		return np.array([w, x, y, z])
+		return np.array([x, y, z, w])
 
 	@property
 	def T(self):

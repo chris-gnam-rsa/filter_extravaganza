@@ -15,29 +15,53 @@ def Xi(q):
     ])
 
 
-def MEKF(X_hat, P, q_hat, dt, meas_std, Q, star_meas_vec, star_true, measured_rate):
-    sigma_star = meas_std[0]
+def MEKF_attitude(X_hat, P, q_hat, dt, meas_std, Q, star_meas_pix, star_true, measured_rate, ax, ay, u0, v0):
 
-    # Get rotation matrix from quaternion
+    # Recover attitude:
     A_body_to_inertial = Rotation.from_quaternion(q_hat).matrix
     A_inertial_to_body = A_body_to_inertial.T
+
+    sigma_pixel = meas_std[0]  # Standard deviation in PIXELS
     
-    # Predicted star directions in body frame
-    predict = (A_inertial_to_body @ star_true.T).T
+    # Predict:
+    b_pred = (A_inertial_to_body @ star_true.T).T
     
-    # Innovation:
-    innovation = star_meas_vec.flatten() - predict.flatten()
+    n_stars = star_meas_pix.shape[0]
     
-    # Construct measurement Jacobian and covariance
-    n_stars = star_meas_vec.shape[0]
-    H = np.zeros((3 * n_stars, 6))
-    R_diag = np.zeros(3 * n_stars)
+    # Initialization for 2D measurements (2 rows per star)
+    H = np.zeros((2 * n_stars, 6))
+    innovation = np.zeros(2 * n_stars)
+    R_diag = np.zeros(2 * n_stars)
     
     for i in range(n_stars):
-        H[3*i:3*(i+1), 0:3] = skew(predict[i, :])
-        H[3*i:3*(i+1), 3:6] = np.zeros((3, 3))
-        R_diag[3*i:3*(i+1)] = sigma_star**2
-    
+        # Measurement prediction for star i:
+        x, y, z = b_pred[i]
+        u_pred = ax * (x / z) + u0
+        v_pred = v0 - ay * (y / z)
+        
+        # Innovation (Measurement - Prediction)
+        innovation[2*i]     = star_meas_pix[i, 0] - u_pred
+        innovation[2*i + 1] = star_meas_pix[i, 1] - v_pred
+
+        # Projective Jacobian
+        term1 = np.array([
+            [ax / z, 0,      -ax * x / z**2], 
+            [0,      -ay / z, ay * y / z**2]
+        ])
+
+        # Kinematic Jacobian
+        term2 = skew(b_pred[i])
+        
+        H_att = term1 @ term2
+
+        # Construct matrix:
+        H[2*i : 2*i+2, 0:3] = H_att
+        H[2*i : 2*i+2, 3:6] = np.zeros((2, 3)) # Bias partials are 0
+        
+        # Measurement Noise
+        R_diag[2*i]     = sigma_pixel**2
+        R_diag[2*i + 1] = sigma_pixel**2
+        
     R = np.diag(R_diag)
 
     # Kalman gain
