@@ -661,7 +661,7 @@ class Epoch:
             New Epoch offset by the specified time.
         """
         if isinstance(time_delta, units.Time):
-            return Epoch(self._et + float(time_delta))
+            return Epoch(self._et + time_delta.to_float("second"))
         return NotImplemented
 
     def __radd__(self, time_delta: units.Time) -> "Epoch":
@@ -683,7 +683,7 @@ class Epoch:
         if isinstance(other, Epoch):
             return units.Time.base_unit(self._et - other._et)
         elif isinstance(other, units.Time):
-            return Epoch(self._et - float(other))
+            return Epoch(self._et - other.to_float("second"))
         return NotImplemented
 
     ##############################

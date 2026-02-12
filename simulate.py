@@ -1,25 +1,35 @@
 from src import create_stars, Camera, Rotation
 from src.dynamics import propagate
+from src.earth import lla
 from estimators import startracker
 from estimators.errors import rotations2errors, plot_error_angles, filter_plot
 from estimators.mekf import MEKF
 
 import numpy as np
 import matplotlib.pyplot as plt
+import datetime
+from pathlib import Path
 
-from rsalib.satellites import TLESatellite
+from rsalib.epoch import Epoch
+from rsalib.satellites import TLESatelliteArray
+from rsalib.units import Time
 
 def main():
     # Simulation Settings:
     num_stars = 5000
-    tsteps = 100
+    tsteps = 1000
     dt = 1
     animate = False
+    time = Epoch(datetime.datetime(2026, 2, 12, 0, 0, 0))
+
+    tle_catalog = "/Users/chrisgnam/source/repos/angl/angl/data/spacetrack_catalog.pkl"
+
 
     # Initial states:
     w0 = 0.5 * np.array([0.1, 0.1, 0.1]) * np.pi / 180  # rad/s
     q0 = np.array([0, 0, 0, 1])
-
+    r0 = lla(0, 0, 400e3)  # m
+    v0 = np.array([0, 0, 0])  #
 
     # Measurement noise:
     pixel_noise_std = 1.0  # pixels
@@ -43,9 +53,13 @@ def main():
     )
 
     # Create the stars:
+    satellites = TLESatelliteArray.from_file(Path(tle_catalog))
+    [sat_r, sat_v, _] = satellites.propagate(time)
+    
     stars = create_stars(num_stars)
 
-    
+    # Create the satellite manager:
+    satellites = TLESatelliteArray.from_file(Path(tle_catalog))
 
     # Initialize:
     X = np.zeros((tsteps, 4+3))
@@ -73,8 +87,14 @@ def main():
 
     # Process noise covariance
     Q = np.zeros((6, 6))
-    Q[0:3, 0:3] = (sigma_v**2) * dt * np.eye(3)
-    Q[3:6, 3:6] = (sigma_u**2) * dt * np.eye(3)
+    sigv2 = sigma_v**2
+    sigu2 = sigma_u**2
+    dt2 = dt**2
+    dt3 = dt**3
+    Q[0:3, 0:3] = (sigv2*dt + (1/3)*sigu2*dt3)*np.eye(3)
+    Q[0:3, 3:6] = 0.5 * sigu2 * dt2 * np.eye(3)
+    Q[3:6, 0:3] = 0.5 * sigu2 * dt2 * np.eye(3)
+    Q[3:6, 3:6] = sigu2 * dt * np.eye(3)
 
     pixel_size = camera.sensor_size[0] / camera.resolution[0]  # mm/pixel
     star_vec_std = pixel_noise_std * pixel_size / camera.focal_length
@@ -87,6 +107,7 @@ def main():
         fig, ax = plt.subplots(figsize=(10, 6))
         scatter = ax.scatter([], [], s=6, color="white", marker="o")
         scatter_star_meas = ax.scatter([], [], s=10, color="red", alpha=0.5, marker="x")
+        scatter_sat = ax.scatter([], [], s=3, color="cyan", marker="o")
         ax.set_xlim(0, camera.resolution[0])
         ax.set_ylim(0, camera.resolution[1])
         ax.set_facecolor("black")
@@ -100,12 +121,18 @@ def main():
         q = X[i, 0:4]
         w = X[i, 4:7]
         camera.orientation = Rotation.from_quaternion(q)
+        camera.position = r0
 
         # Simulate star measurements:
         star_pix, valid = camera.project_directions(stars)
         star_meas = star_pix + np.random.normal(0, pixel_noise_std, size=star_pix.shape)
         star_meas_vec = camera.pixel_to_rays_body(star_meas)
         star_true = stars[valid]
+
+        [sat_r, sat_v, _] = satellites.propagate(time)
+        sat_pix, valid = camera.project_points(sat_r)
+        time = time + Time(dt, "second")
+
 
         # Simulate Gyro measurements:
         bias[i+1] = bias[i] + sigma_u * np.sqrt(dt) * np.random.randn()
@@ -122,6 +149,7 @@ def main():
         if animate:
             scatter.set_offsets(star_pix)
             scatter_star_meas.set_offsets(star_meas)
+            scatter_sat.set_offsets(sat_pix)
             fig.canvas.draw_idle()
             plt.pause(0.01)
 

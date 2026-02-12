@@ -68,21 +68,28 @@ def MEKF(X_hat, P, q_hat, dt, meas_std, Q, star_meas_vec, star_true, measured_ra
     q_hat = propagate_quaternion(q_hat, omega, dt)
     q_hat = q_hat / np.linalg.norm(q_hat)
     
-    # State transition matrix
-    F = np.zeros((6, 6))
-    F[0:3, 0:3] = -skew(omega)
-    F[0:3, 3:6] = -np.eye(3)
-    F[3:6, :] = 0
-    
-    # Discrete state transition (first-order approximation)
-    Phi = np.eye(6) + F * dt
-    
-    # Process noise mapping
+    # Discrete-time Process noise mapping
     G = np.zeros((6, 6))
     G[0:3, 0:3] = -np.eye(3)  # Attitude noise
     G[3:6, 3:6] = np.eye(3)   # Bias noise
     
-    # Propagate covariance
+    # State transition matrix
+    w = np.linalg.norm(omega)
+    wx = skew(omega)
+    wx2 = wx @ wx
+    Phi_att_11 = np.eye(3) - (wx * np.sin(w*dt)/w) + (wx2 * ((1 - np.cos(w * dt)))/(w**2))
+    Phi_att_12 = (wx*((1 - np.cos(w*dt))/(w**2))) - (np.eye(3)*dt) - (wx2*(w*dt - np.sin(w*dt))/(w**3))
+    Phi_att_21 = np.zeros((3, 3))
+    Phi_att_22 = np.eye(3)
+
+    Phi_att = np.block([
+        [Phi_att_11, Phi_att_12],
+        [Phi_att_21, Phi_att_22]
+    ])
+
+    Phi = Phi_att
+
+    # Discrete-time covariance propagation
     P = Phi @ P @ Phi.T + G @ Q @ G.T
     
     # Reset
