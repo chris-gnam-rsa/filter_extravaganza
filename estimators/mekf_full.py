@@ -5,7 +5,7 @@ from src import Rotation
 from src.dynamics import propagate_quaternion
 
 
-def MEKF_attitude(X_hat, P, q_hat, dt, meas_std, Q, star_meas_pix, star_true, measured_rate, ax, ay, u0, v0):
+def MEKF_full(X_hat, P, q_hat, dt, meas_std, Q, star_meas_pix, star_true, sat_meas_pix, sat_true, measured_rate, ax, ay, u0, v0):
     # Extract measurement uncertainties:
     sigma_pixel = meas_std[0]  # Standard deviation in PIXELS
 

@@ -1,8 +1,7 @@
 from src import create_stars, Camera, Rotation
 from src.dynamics import propagate
 from src.earth import lla
-from estimators import startracker
-from estimators.errors import rotations2errors, plot_error_angles, filter_plot
+from estimators.errors import plot_error_angles, filter_plot
 from estimators import MEKF_attitude
 
 import numpy as np

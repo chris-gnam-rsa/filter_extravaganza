@@ -1,9 +1,8 @@
 from src import create_stars, Camera, Rotation
 from src.dynamics import propagate
 from src.earth import lla
-from estimators import startracker
-from estimators.errors import rotations2errors, plot_error_angles, filter_plot
-from estimators import MEKF_attitude
+from estimators.errors import plot_error_angles, filter_plot
+from estimators import MEKF_full
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -158,6 +157,9 @@ def main():
             curr_star_meas_pix = np.array([])
             curr_star_true = np.array([])
 
+            sat_meas = np.array([])
+            sat_r_true = np.array([])
+
         else:
             star_pix, valid = camera.project_directions(stars)
             star_meas = star_pix + np.random.normal(0, pixel_noise_std, size=star_pix.shape)
@@ -176,6 +178,12 @@ def main():
             # Simulate satellite measurements:
             [sat_r, sat_v, _] = satellites.propagate(time)
             sat_pix, valid = camera.project_points(sat_r)
+            sat_meas = sat_pix + np.random.normal(0, pixel_noise_std, size=sat_pix.shape)
+            sat_r_true = sat_r[valid]
+
+            # TODO apply noise to the satellite position (catalog error):
+
+
 
         time = time + Time(dt, "second")
 
@@ -184,10 +192,12 @@ def main():
         measured_rate[i+1] = w + gyro_bias[i+1] + sig_arw / np.sqrt(dt) * np.random.randn()
 
         # Run the MEKF:
-        X_hat[i+1], P, q_hat[i+1] = MEKF_attitude(
+        X_hat[i+1], P, q_hat[i+1] = MEKF_full(
             X_hat[i], P, q_hat[i], dt, meas_std, Q, 
             curr_star_meas_pix,
-            curr_star_true, 
+            curr_star_true,
+            sat_meas,
+            sat_r_true,
             measured_rate[i+1], 
             ax, ay, u0, v0
         )
