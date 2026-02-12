@@ -5,3 +5,8 @@ dependencies:
   - python=3.11
   - numpy
   - matplotlib
+  # RSALIB Dependencies:
+  - sgp4
+  - spiceypy
+  - certifi
+  - platformdirs

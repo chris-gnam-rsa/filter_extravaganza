@@ -56,5 +56,3 @@ def plot_error_angles(time_array, q_hat, q_true, q_hat_sig3):
 
     plt.subplot(3, 1, 3)
     filter_plot(time_array, error_angles_deg[:,2], q_hat_sig3_deg[:,2], "Yaw Error (deg)")
-
-    plt.show()

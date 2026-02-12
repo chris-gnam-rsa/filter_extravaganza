@@ -7,6 +7,8 @@ from estimators.mekf import MEKF
 import numpy as np
 import matplotlib.pyplot as plt
 
+from rsalib.satellites import TLESatellite
+
 def main():
     # Simulation Settings:
     num_stars = 5000
@@ -56,11 +58,11 @@ def main():
     X_hat[0, 0:3] = np.zeros(3) # Initial attitude error guess
     X_hat[0, 3:6] = np.zeros(3) # Initial bias estimate
 
-    angle_std = np.deg2rad(5)
+    angle_std = np.deg2rad(10)
 
     q_hat = np.zeros((tsteps, 4))
     q_hat[0] = Rotation.from_euler([angle_std * np.random.randn(), angle_std * np.random.randn(), angle_std * np.random.randn()], order="xyz").quaternion # Initial attitude guess
-    q_hat[0] = q0
+    # q_hat[0] = q0
 
     bias_std = 0.5
     P = np.diag([
@@ -77,6 +79,7 @@ def main():
     pixel_size = camera.sensor_size[0] / camera.resolution[0]  # mm/pixel
     star_vec_std = pixel_noise_std * pixel_size / camera.focal_length
     meas_std = np.array([star_vec_std]) # radians
+    # meas_std[0] = 1e-1
     
 
     if animate:
