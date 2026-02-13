@@ -41,6 +41,7 @@ class Rotation:
 			z = 0.25 * s
 
 		return np.array([x, y, z, w])
+		
 
 	@property
 	def T(self):
@@ -104,6 +105,26 @@ class Rotation:
 			return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], dtype=float)
 		raise ValueError("Axis must be one of 'x', 'y', or 'z'.")
 
+	@staticmethod
+	def _axis_angle_matrix_vec(axis, angle):
+		axis = np.asarray(axis, dtype=float).reshape(3)
+		norm = np.linalg.norm(axis)
+		if norm == 0:
+			raise ValueError("Axis vector must be non-zero.")
+		axis = axis / norm
+		x, y, z = axis
+		c = np.cos(angle)
+		s = np.sin(angle)
+		k = np.array(
+			[
+				[0.0, -z, y],
+				[z, 0.0, -x],
+				[-y, x, 0.0],
+			],
+			dtype=float,
+		)
+		return np.eye(3) + s * k + (1.0 - c) * (k @ k)
+
 	@classmethod
 	def from_matrix(cls, matrix):
 		return cls(matrix)
@@ -127,6 +148,52 @@ class Rotation:
 		for axis, angle in zip(order, ang):
 			rot = cls._axis_angle_matrix(axis, angle) @ rot
 		return cls(rot)
+
+	@classmethod
+	def align_vectors(cls, a, b, tol=1e-8):
+		vec_a = np.asarray(a, dtype=float)
+		vec_b = np.asarray(b, dtype=float)
+		if vec_a.shape == (3,):
+			vec_a = vec_a.reshape(1, 3)
+		if vec_b.shape == (3,):
+			vec_b = vec_b.reshape(1, 3)
+		if vec_a.ndim != 2 or vec_b.ndim != 2 or vec_a.shape != vec_b.shape or vec_a.shape[1] != 3:
+			raise ValueError("Vectors must have shape (3,) or (N, 3) and match in size.")
+
+		def _normalize_rows(v):
+			norms = np.linalg.norm(v, axis=1)
+			if np.any(norms < tol):
+				raise ValueError("Vectors must be non-zero.")
+			return v / norms[:, None]
+
+		a_n = _normalize_rows(vec_a)
+		b_n = _normalize_rows(vec_b)
+
+		if a_n.shape[0] == 1:
+			v1 = a_n[0]
+			v2 = b_n[0]
+			c = float(np.dot(v1, v2))
+			if c > 1.0 - tol:
+				return cls(np.eye(3))
+			if c < -1.0 + tol:
+				basis = np.array([1.0, 0.0, 0.0])
+				if abs(v1[0]) > abs(v1[1]):
+					basis = np.array([0.0, 1.0, 0.0])
+				axis = np.cross(v1, basis)
+				return cls(cls._axis_angle_matrix_vec(axis, np.pi))
+			axis = np.cross(v1, v2)
+			s = np.linalg.norm(axis)
+			axis = axis / s
+			angle = np.arctan2(s, c)
+			return cls(cls._axis_angle_matrix_vec(axis, angle))
+
+		h = a_n.T @ b_n
+		u, _, vt = np.linalg.svd(h)
+		r = vt.T @ u.T
+		if np.linalg.det(r) < 0:
+			vt[-1, :] *= -1.0
+			r = vt.T @ u.T
+		return cls(r)
 
 	def rotate(self, vectors):
 		vecs = np.asarray(vectors, dtype=float)
