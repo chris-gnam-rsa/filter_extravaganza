@@ -17,9 +17,9 @@ def main():
     ###########################
     ### Simulation Settings ###
     ###########################
-    dt = 0.1                 # simulation step
+    dt = 0.1                # simulation step
     camera_dt = 1.0         # camera period in seconds
-    duration = 10*60         # total simulation duration in seconds
+    duration = 60*60        # total simulation duration in seconds
 
     num_stars = 5000
     max_stars_used = 10
@@ -28,6 +28,8 @@ def main():
     tle_catalog = "/Users/chrisgnam/source/repos/angl/angl/data/spacetrack_catalog.pkl"
 
     animate = False
+
+    fraction_images_unavailable = 0.95 # Fraction of images where star measurements are unavailable
 
     ############################
     ### Camera Configuration ###
@@ -101,6 +103,9 @@ def main():
     ### Pre-allocate ###
     ####################
     tsteps = int(duration / dt) + 1
+
+    # Camera available history:
+    camera_available_history = np.zeros(tsteps, dtype=bool)
 
     # Initialize gyro bias and measurement arrays:
     measured_rate = np.zeros((tsteps, 3))
@@ -187,14 +192,9 @@ def main():
         camera.position = cam_pos0
 
         # Simulate camera measurements (once every camera_step steps):
-        if (i % camera_step) != 0:
-            curr_star_meas_pix = np.empty((0, 2))
-            curr_star_true = np.empty((0, 3))
-
-            sat_meas = np.empty((0, 2))
-            sat_r_true = np.empty((0, 3))
-
-        else:
+        camera_available = (i % camera_step) == 0 and (np.random.rand() > fraction_images_unavailable)
+        camera_available_history[i] = camera_available
+        if camera_available:
             star_pix, valid = camera.project_directions(stars)
             star_meas = star_pix + np.random.normal(0, pixel_noise_std, size=star_pix.shape)
 
@@ -223,6 +223,13 @@ def main():
 
             # TODO apply noise to the satellite position (catalog error):
 
+        else:
+            curr_star_meas_pix = np.empty((0, 2))
+            curr_star_true = np.empty((0, 3))
+
+            sat_meas = np.empty((0, 2))
+            sat_r_true = np.empty((0, 3))
+
 
 
         time = time + Time(dt, "second")
@@ -246,12 +253,11 @@ def main():
         # Propagate the truth:
         X[i+1] = propagate(X[i], dt)
 
-        if (i % camera_step) == 0:
-            if animate:
-                star_plt.set_offsets(curr_star_meas_pix)
-                sat_plt.set_offsets(sat_meas)
-                fig.canvas.draw_idle()
-                plt.pause(0.1)
+        if camera_available and animate:
+            star_plt.set_offsets(curr_star_meas_pix)
+            sat_plt.set_offsets(sat_meas)
+            fig.canvas.draw_idle()
+            plt.pause(0.1)
 
     if animate:
         plt.ioff()
@@ -260,6 +266,17 @@ def main():
 
     # Plot the results:
     t_array = np.arange(0, duration + dt, dt).flatten()
+
+    plt.figure()
+    plt.plot(
+        t_array,
+        camera_available_history.astype(int),
+        drawstyle="steps-post",
+        linewidth=0.6,
+    )
+    plt.title("Camera Availability Over Time")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Camera Available (True/False)")
 
     # Plot Position Residuals:
     position_error = X_hat[:, 0:3] - cam_pos0
