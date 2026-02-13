@@ -11,12 +11,12 @@ def main():
     ###########################
     ### Simulation Settings ###
     ###########################
-    dt = 0.1                 # simulation step
-    camera_dt = 10.0         # camera period in seconds
-    duration = 10*60         # total simulation duration in seconds
+    dt = 0.1               # simulation step
+    camera_dt = 1           # camera period in seconds
+    duration = 10*60        # total simulation duration in seconds
 
     num_stars = 5000
-    max_stars_used = 10
+    max_stars_used = 25
 
 
     ############################
@@ -25,6 +25,10 @@ def main():
     focal_length = 50
     sensor_size = [36, 24]
     resolution = [1920, 1080]
+
+    fov_x_deg = np.rad2deg(2.0 * np.arctan(sensor_size[0] / (2.0 * focal_length)))
+    fov_y_deg = np.rad2deg(2.0 * np.arctan(sensor_size[1] / (2.0 * focal_length)))
+    print(f"FOV (deg): {fov_x_deg:.2f} x {fov_y_deg:.2f}")
 
 
     ######################
@@ -39,11 +43,11 @@ def main():
     ####################
     ### Sensor Noise ###
     ####################
-    pixel_noise_std = 1.0  # Camera centroiding noise in pixels
+    pixel_noise_std = 0.25  # Camera centroiding noise in pixels
 
     # Gyroscope Noise Density (Angle Random Walk)
     # Spec: ~0.01 deg/s/sqrt(Hz)
-    sig_arw = 0.01 * (np.pi / 180.0)  # ~1.74e-4 rad/s/sqrt(Hz)
+    sig_arw = 0.00583# * (np.pi / 180.0)  # ~1.74e-4 rad/s/sqrt(Hz)
 
     # Gyroscope Bias Diffusion (Rate Random Walk)
     # Spec: ~2.0 deg/hour/sqrt(Hz) ... hard to find exact, often tuned experimentally

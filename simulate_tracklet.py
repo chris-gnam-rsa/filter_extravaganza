@@ -23,16 +23,14 @@ def main():
     duration = 60*60        # total simulation duration in seconds
 
     num_stars = 5000
-    max_stars_used = 25
+    max_stars_used = 10
 
     time = Epoch(datetime.datetime(2026, 2, 12, 0, 0, 0))
     tle_catalog = "/Users/chrisgnam/source/repos/angl/angl/data/spacetrack_catalog.pkl"
 
-    animate = False
+    animate = True
 
     fraction_images_unavailable = 0.05 # Fraction of images where star measurements are unavailable
-
-    simulate_errors = False
 
     # sat_intrack_std = 4000*1000/3 # 4000km 3-sigma (converted to standard deviation)
     # sat_crosstrack_std = 5*1000/3 # 5km 3-sigma (converted to standard deviation)
@@ -71,8 +69,7 @@ def main():
 
     # Gyroscope Noise Density (Angle Random Walk)
     # Spec: ~0.01 deg/s/sqrt(Hz)
-    # sig_arw = 0.01 * (np.pi / 180.0)  # ~1.74e-4 rad/s/sqrt(Hz)
-    sig_arw = 0.00583# * (np.pi / 180.0)  # ~1.74e-4 rad/s/sqrt(Hz)
+    sig_arw = 0.01 * (np.pi / 180.0)  # ~1.74e-4 rad/s/sqrt(Hz)
 
     # Gyroscope Bias Diffusion (Rate Random Walk)
     # Spec: ~2.0 deg/hour/sqrt(Hz) ... hard to find exact, often tuned experimentally
@@ -207,6 +204,7 @@ def main():
         ax_anim.set_xticks([])
         ax_anim.set_yticks([])
         ax_anim.set_frame_on(False)
+        sat_meas_history = []       
 
     for i in range(tsteps-1):
         # Update the camera:
@@ -239,11 +237,9 @@ def main():
             if not sat_offsets_initialized:
                 # Initialize satellite position offsets in RIC frame:
                 sat_offsets_ric = np.zeros((sat_r.shape[0], 3))
-
-                if simulate_errors:
-                    sat_offsets_ric[:, 0] = np.random.randn(sat_r.shape[0]) * sat_intrack_std
-                    sat_offsets_ric[:, 1] = np.random.randn(sat_r.shape[0]) * sat_crosstrack_std
-                    sat_offsets_ric[:, 2] = np.random.randn(sat_r.shape[0]) * sat_radial_std
+                sat_offsets_ric[:, 0] = np.random.randn(sat_r.shape[0]) * sat_intrack_std
+                sat_offsets_ric[:, 1] = np.random.randn(sat_r.shape[0]) * sat_crosstrack_std
+                sat_offsets_ric[:, 2] = np.random.randn(sat_r.shape[0]) * sat_radial_std
                 sat_offsets_initialized = True
 
             # Reject any satellites that are NaN:
@@ -252,14 +248,31 @@ def main():
             sat_v = sat_v[valid_sat]
             sat_offsets_ric_use = sat_offsets_ric[valid_sat]
 
+            id = valid_sat[0] # ????
+
             # Apply RIC offsets to satellite positions:
             sat_r_true = apply_ric_offsets(sat_r, sat_v, sat_offsets_ric_use)
 
             # This assumes the true position of the satellite deviates from the catalog position by a constant RIC offset
             sat_pix, valid = camera.project_points(sat_r_true)
             sat_meas = sat_pix + np.random.normal(0, pixel_noise_std, size=sat_pix.shape)
-            sat_r_catalog = sat_r[valid]
-            sat_predict, _ = camera.project_points(sat_r_catalog)
+
+            tracklet_manager.add_observations(sat_meas)
+            
+
+            # Accumulate tracklet:
+            t0 = time
+            # TODO???
+            tf = time
+            time_obs = (t0 + tf) / 2
+
+            # Identify which satellite (for now, we assume data association is solved):
+
+            # Once tracklet is complete fit polynomial and evaluate at mean observation time:
+            sat_pix_mean = tracklet(time_obs)
+
+            # Evaluate catalog at mean observation time:
+            [sat_r_catalog, sat_v, _] = satellites.propagate(time_obs, id)
 
         else:
             curr_star_meas_pix = np.empty((0, 2))
@@ -282,7 +295,7 @@ def main():
             X_hat[i], P, q_hat[i], dt, meas_std, Q, 
             curr_star_meas_pix,
             curr_star_true,
-            sat_meas,
+            sat_pix_mean,
             sat_r_catalog,
             measured_rate[i+1], 
             ax, ay, u0, v0
@@ -294,7 +307,10 @@ def main():
 
         if camera_available and animate:
             star_plt.set_offsets(curr_star_meas_pix)
-            sat_plt.set_offsets(sat_meas)
+            if sat_meas.size > 0:
+                sat_meas_history.append(sat_meas)
+            if sat_meas_history:
+                sat_plt.set_offsets(np.vstack(sat_meas_history))
             sat_predict_plt.set_offsets(sat_predict)
             fig.canvas.draw_idle()
             plt.pause(0.1)

@@ -5,6 +5,7 @@ dependencies:
   - python=3.11
   - numpy
   - matplotlib
+  - pandas
   # RSALIB Dependencies:
   - sgp4
   - spiceypy

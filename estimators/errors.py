@@ -24,7 +24,7 @@ def rotations2errors(R_true: np.ndarray, R_est: np.ndarray) -> np.ndarray:
         return axis * angle
     
 
-def filter_plot(time_array, error_array, sigma_array, ylabel, scale=None):
+def filter_plot(time_array, error_array, sigma_array, ylabel, scale=1.5):
     plt.plot(time_array, error_array)
     plt.fill_between(time_array,
                      -1 * sigma_array,
@@ -45,7 +45,7 @@ def filter_plot(time_array, error_array, sigma_array, ylabel, scale=None):
         plt.ylim(-np.median(3*sigma_array)*scale, np.median(3*sigma_array)*scale)
 
 
-def plot_error_angles(time_array, q_hat, q_true, q_hat_sig3, scale=None):
+def plot_error_angles(time_array, q_hat, q_true, q_hat_sig3, scale=1.5):
     error_angles = np.zeros((q_hat.shape[0], 3))
     for i in range(q_hat.shape[0]):
         R_true = Rotation.from_quaternion(q_true[i]).matrix
