@@ -24,44 +24,36 @@ class Tracklet:
         self.Q = np.diag([0, 0, 1, 1])
 
     def update(self, obs, dt):
-        if (obs.size == 0):
+        if obs.size == 0:
             return
 
         obs = obs.flatten()
 
         if len(self.observations) == 0:
             self.observations.append(obs)
-
-            # Initialize state:
             self.x_hat[:2] = obs
             self.x_hat[2:] = 0
-
         else:
-            x_pred, gate = self.prediction_gate(dt)
-
-            in_x = abs(obs[0] - x_pred[0]) <= gate[0]
-            in_y = abs(obs[1] - x_pred[1]) <= gate[1]
-            
-            if in_x and in_y:
-                # Innovation:
-                dx = obs - self.x_hat[:2]
-
-                # Kalman Update:
-                S = self.H @ self.P @ self.H.T + self.R
-                K = self.P @ self.H.T @ np.linalg.inv(S)
-                
-                self.P = (np.eye(4) - K @ self.H) @ self.P
-                self.x_hat = self.x_hat + K @ dx
-
+            # Propagate FIRST
             self.Phi = np.eye(4)
             self.Phi[0, 2] = dt  
             self.Phi[1, 3] = dt        
 
-            # State propagation (x = x + v*dt)
-            self.x_hat[:2] = self.x_hat[:2] + (self.x_hat[2:] * dt)
+            self.x_hat = self.Phi @ self.x_hat
+            self.P = self.Phi @ self.P @ self.Phi.T + self.Q * dt**2
+
+            # Then check gate and update
+            gate = 3 * np.sqrt(np.diag(self.P)[:2])
             
-            # Covariance propagation
-            self.P = self.Phi @ self.P @ self.Phi.T  + self.Q * dt**2
+            in_x = abs(obs[0] - self.x_hat[0]) <= gate[0]
+            in_y = abs(obs[1] - self.x_hat[1]) <= gate[1]
+            
+            if in_x and in_y:
+                dx = obs - self.x_hat[:2]
+                S = self.H @ self.P @ self.H.T + self.R
+                K = self.P @ self.H.T @ np.linalg.inv(S)
+                self.x_hat = self.x_hat + K @ dx
+                self.P = (np.eye(4) - K @ self.H) @ self.P
 
     def prediction_gate(self, dt):
         # Simple constant velocity model
@@ -170,25 +162,19 @@ def main():
     #######################
     ### Simulation Loop ###
     #######################
-    sat_pix, valid = camera.project_points(sat_r)
-    sat_meas = sat_pix + np.random.normal(0, pixel_noise_std, size=sat_pix.shape)
-    
     x_hat = np.zeros((tsteps, 4))
     pixel = np.zeros((tsteps, 2))
     for i in range(tsteps-1):
         camera_available = (i % camera_step) == 0 and (np.random.rand() > fraction_images_unavailable)
 
         if camera_available:
-            tracklet_manager.add_observations(sat_meas, dt)
-
-            sat_pix, valid = camera.project_points(sat_r)
+            sat_pix, valid = camera.project_points(sat_r)    # Get current position
             sat_meas = sat_pix + np.random.normal(0, pixel_noise_std, size=sat_pix.shape)
-                
-            # print(sat_meas)
-            # print(tracklet_manager.tracklets[0].x_hat)
-            # print("\n")
+            
+            tracklet_manager.add_observations(sat_meas, dt)  # Update with current measurement
+            
             if sat_meas.size > 0:
-                pixel[i] = sat_meas.flatten()
+                pixel[i] = sat_pix
                 x_hat[i] = tracklet_manager.tracklets[0].x_hat
 
         if camera_available and animate and sat_meas.size > 0:
@@ -209,26 +195,17 @@ def main():
 
     error = x_hat[:, :2] - pixel
 
-    plt.plot(pixel[:,0], pixel[:,1], label="Measurements", marker="o", linestyle="")
-    plt.plot(x_hat[:,0], x_hat[:,1], label="Tracklet Estimate", marker="x", linestyle="")
+    print(np.mean(error[:,0]))
+    print(np.mean(error[:,1]))
+    plt.figure()
+    plt.plot(error[:, 0], label="x error")
+    plt.plot(error[:, 1], label="y error")
     plt.legend()
-    plt.title("Tracklet Position Estimation")
-    plt.xlabel("Pixel X")
-    plt.ylabel("Pixel Y")
+    plt.title("Tracklet Position Estimation Error")
+    plt.xlabel("Time Step")
+    plt.ylabel("Error (pixels)")
     plt.grid()
     plt.show()
-
-    # print(np.mean(error[:,0]))
-    # print(np.mean(error[:,1]))
-    # plt.figure()
-    # plt.plot(error[:, 0], label="x error")
-    # plt.plot(error[:, 1], label="y error")
-    # plt.legend()
-    # plt.title("Tracklet Position Estimation Error")
-    # plt.xlabel("Time Step")
-    # plt.ylabel("Error (pixels)")
-    # plt.grid()
-    # plt.show()
 
 if __name__ == "__main__":
     main()
