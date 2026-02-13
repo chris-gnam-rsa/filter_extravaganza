@@ -7,7 +7,9 @@ from src.dynamics import propagate_quaternion
 
 def MEKF_position(X_hat, P, q_hat, dt, meas_std, Q, star_meas_pix, star_true, sat_meas_pix, sat_true, measured_rate, ax, ay, u0, v0):
     # Extract measurement uncertainties:
-    sigma_pixel = meas_std[0]  # Standard deviation in PIXELS
+    star_sigma_pixel = meas_std[0]  # Standard deviation in PIXELS
+    sat_sigma_pixel = meas_std[1]  # Standard deviation in PIXELS
+
 
     N = 9 # State dimension (3 position, 3 attitude error, 3 bias)
 
@@ -54,8 +56,8 @@ def MEKF_position(X_hat, P, q_hat, dt, meas_std, Q, star_meas_pix, star_true, sa
         H_star[2*i : 2*i+2, 6:9] = np.zeros((2, 3)) # Bias partials are 0
         
         # Measurement Noise
-        R_diag[2*i]     = sigma_pixel**2
-        R_diag[2*i + 1] = sigma_pixel**2
+        R_diag[2*i]     = star_sigma_pixel**2
+        R_diag[2*i + 1] = star_sigma_pixel**2
 
     H_sat = np.zeros((2 * n_sats, N))
     innovation_sat = np.zeros(2 * n_sats)
@@ -89,8 +91,8 @@ def MEKF_position(X_hat, P, q_hat, dt, meas_std, Q, star_meas_pix, star_true, sa
         H_sat[2*i : 2*i+2, 6:9] = np.zeros((2, 3)) # Bias partials are 0
         
         # Measurement Noise
-        R_sat_diag[2*i]     = sigma_pixel**2
-        R_sat_diag[2*i + 1] = sigma_pixel**2
+        R_sat_diag[2*i]     = sat_sigma_pixel**2
+        R_sat_diag[2*i + 1] = sat_sigma_pixel**2
 
     # Kalman gain
     H = np.vstack((H_star, H_sat))

@@ -18,7 +18,7 @@ def main():
     ### Simulation Settings ###
     ###########################
     dt = 0.1                # simulation step
-    camera_dt = 1.0         # camera period in seconds
+    camera_dt = 0.1         # camera period in seconds
     duration = 10*60        # total simulation duration in seconds
 
     num_stars = 5000

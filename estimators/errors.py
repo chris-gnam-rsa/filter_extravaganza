@@ -24,7 +24,7 @@ def rotations2errors(R_true: np.ndarray, R_est: np.ndarray) -> np.ndarray:
         return axis * angle
     
 
-def filter_plot(time_array, error_array, sigma_array, ylabel):
+def filter_plot(time_array, error_array, sigma_array, ylabel, scale=None):
     plt.plot(time_array, error_array)
     plt.fill_between(time_array,
                      -1 * sigma_array,
@@ -40,10 +40,12 @@ def filter_plot(time_array, error_array, sigma_array, ylabel):
                      color='red', alpha=0.15, label='3-sigma bounds')
     plt.ylabel(ylabel)
     plt.grid()
-    plt.ylim(-np.median(3*sigma_array)*1.5, np.median(3*sigma_array)*1.5)
+
+    if scale is not None:
+        plt.ylim(-np.median(3*sigma_array)*scale, np.median(3*sigma_array)*scale)
 
 
-def plot_error_angles(time_array, q_hat, q_true, q_hat_sig3):
+def plot_error_angles(time_array, q_hat, q_true, q_hat_sig3, scale=None):
     error_angles = np.zeros((q_hat.shape[0], 3))
     for i in range(q_hat.shape[0]):
         R_true = Rotation.from_quaternion(q_true[i]).matrix
@@ -55,12 +57,12 @@ def plot_error_angles(time_array, q_hat, q_true, q_hat_sig3):
 
     plt.figure()
     plt.subplot(3, 1, 1)
-    filter_plot(time_array, error_angles_deg[:,0], q_hat_sig3_deg[:,0], "Roll Error (deg)")
+    filter_plot(time_array, error_angles_deg[:,0], q_hat_sig3_deg[:,0], "Roll Error (deg)", scale=scale)
     plt.title("Star Tracker Attitude Estimation Errors")
 
     plt.subplot(3, 1, 2)
-    filter_plot(time_array, error_angles_deg[:,1], q_hat_sig3_deg[:,1], "Pitch Error (deg)")
+    filter_plot(time_array, error_angles_deg[:,1], q_hat_sig3_deg[:,1], "Pitch Error (deg)", scale=scale)
     plt.ylabel("Angle Error (deg)")
 
     plt.subplot(3, 1, 3)
-    filter_plot(time_array, error_angles_deg[:,2], q_hat_sig3_deg[:,2], "Yaw Error (deg)")
+    filter_plot(time_array, error_angles_deg[:,2], q_hat_sig3_deg[:,2], "Yaw Error (deg)", scale=scale)

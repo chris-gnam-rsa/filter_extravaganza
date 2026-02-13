@@ -1,6 +1,7 @@
 from src import create_stars, Camera, Rotation
 from src.dynamics import propagate
 from src.earth import lla
+from src.orbit_utils import apply_ric_offsets
 from estimators.errors import plot_error_angles, filter_plot
 from estimators import MEKF_position
 
@@ -29,7 +30,15 @@ def main():
 
     animate = False
 
-    fraction_images_unavailable = 0.95 # Fraction of images where star measurements are unavailable
+    fraction_images_unavailable = 0.05 # Fraction of images where star measurements are unavailable
+
+    # sat_intrack_std = 4000*1000/3 # 4000km 3-sigma (converted to standard deviation)
+    # sat_crosstrack_std = 5*1000/3 # 5km 3-sigma (converted to standard deviation)
+    # sat_radial_std = 40*1000/3    # 40km 3-sigma (converted to standard deviation)
+
+    sat_intrack_std = 40*1000/3 # 4000km 3-sigma (converted to standard deviation)
+    sat_crosstrack_std = 1*1000/3 # 5km 3-sigma (converted to standard deviation)
+    sat_radial_std = 10*1000/3    # 40km 3-sigma (converted to standard deviation)
 
     ############################
     ### Camera Configuration ###
@@ -162,8 +171,11 @@ def main():
         [np.zeros((6, 3)), Q_att]
     ])
 
+    star_pixel_noise_std = pixel_noise_std
+    sat_pixel_noise_std = pixel_noise_std + 15
+    meas_std = np.array([star_pixel_noise_std, sat_pixel_noise_std])
 
-    meas_std = np.array([pixel_noise_std])
+    sat_offsets_initialized = False
 
 
     #####################
@@ -176,6 +188,15 @@ def main():
         ax_anim.set_facecolor("black")
         star_plt = ax_anim.scatter([], [], s=10, c="white")
         sat_plt = ax_anim.scatter([], [], s=5, c="cyan")
+        sat_predict_plt = ax_anim.scatter(
+            [],
+            [],
+            s=200,
+            facecolors="none",
+            edgecolors="magenta",
+            linewidths=1.0,
+            marker="o",
+        )
         ax_anim.set_xlim(0, camera.resolution[0])
         ax_anim.set_ylim(0, camera.resolution[1])
         ax_anim.set_aspect("equal", adjustable="box")
@@ -212,24 +233,37 @@ def main():
             # Simulate satellite measurements:
             [sat_r, sat_v, _] = satellites.propagate(time)
 
+            if not sat_offsets_initialized:
+                # Initialize satellite position offsets in RIC frame:
+                sat_offsets_ric = np.zeros((sat_r.shape[0], 3))
+                sat_offsets_ric[:, 0] = np.random.randn(sat_r.shape[0]) * sat_intrack_std
+                sat_offsets_ric[:, 1] = np.random.randn(sat_r.shape[0]) * sat_crosstrack_std
+                sat_offsets_ric[:, 2] = np.random.randn(sat_r.shape[0]) * sat_radial_std
+                sat_offsets_initialized = True
+
             # Reject any satellites that are NaN:
-            sat_r = sat_r[~np.isnan(sat_r).any(axis=1)]
-            sat_v = sat_v[~np.isnan(sat_v).any(axis=1)]
+            valid_sat = ~np.isnan(sat_r).any(axis=1)
+            sat_r = sat_r[valid_sat]
+            sat_v = sat_v[valid_sat]
+            sat_offsets_ric_use = sat_offsets_ric[valid_sat]
 
-            sat_pix, valid = camera.project_points(sat_r)
+            # Apply RIC offsets to satellite positions:
+            sat_r_true = apply_ric_offsets(sat_r, sat_v, sat_offsets_ric_use)
+
+            # This assumes the true position of the satellite deviates from the catalog position by a constant RIC offset
+            sat_pix, valid = camera.project_points(sat_r_true)
             sat_meas = sat_pix + np.random.normal(0, pixel_noise_std, size=sat_pix.shape)
-            sat_r_true = sat_r[valid]
-
-
-            # TODO apply noise to the satellite position (catalog error):
+            sat_r_catalog = sat_r[valid]
+            sat_predict, _ = camera.project_points(sat_r_catalog)
 
         else:
             curr_star_meas_pix = np.empty((0, 2))
             curr_star_true = np.empty((0, 3))
 
             sat_meas = np.empty((0, 2))
+            sat_predict = np.empty((0, 2))
+            sat_r_catalog = np.empty((0, 3))
             sat_r_true = np.empty((0, 3))
-
 
 
         time = time + Time(dt, "second")
@@ -244,7 +278,7 @@ def main():
             curr_star_meas_pix,
             curr_star_true,
             sat_meas,
-            sat_r_true,
+            sat_r_catalog,
             measured_rate[i+1], 
             ax, ay, u0, v0
         )
@@ -256,6 +290,7 @@ def main():
         if camera_available and animate:
             star_plt.set_offsets(curr_star_meas_pix)
             sat_plt.set_offsets(sat_meas)
+            sat_predict_plt.set_offsets(sat_predict)
             fig.canvas.draw_idle()
             plt.pause(0.1)
 
@@ -283,20 +318,20 @@ def main():
     position_sig3 = sig3[:, 0:3]
     plt.figure()
     plt.subplot(3, 1, 1)
-    filter_plot(t_array, position_error[:, 0], position_sig3[:, 0], "Position X Error (m)")
+    filter_plot(t_array, position_error[:, 0], position_sig3[:, 0], "Position X Error (m)", scale = 5)
     plt.title("Position Estimation Errors")
 
     plt.subplot(3, 1, 2)
-    filter_plot(t_array, position_error[:, 1], position_sig3[:, 1], "Position Y Error (m)")
+    filter_plot(t_array, position_error[:, 1], position_sig3[:, 1], "Position Y Error (m)", scale = 5)
 
     plt.subplot(3, 1, 3)
-    filter_plot(t_array, position_error[:, 2], position_sig3[:, 2], "Position Z Error (m)")
+    filter_plot(t_array, position_error[:, 2], position_sig3[:, 2], "Position Z Error (m)", scale = 5)
 
     
     # Plot Attitude Residuals:
     q_true = X[:, 0:4]
     q_hat_sig3 = sig3[:, 3:6]
-    plot_error_angles(t_array, q_hat, q_true, q_hat_sig3)
+    plot_error_angles(t_array, q_hat, q_true, q_hat_sig3, scale=1.5)
 
 
     # Plot Bias Residuals:
@@ -305,14 +340,14 @@ def main():
 
     plt.figure()
     plt.subplot(3, 1, 1)
-    filter_plot(t_array, bias_error[:, 0], bias_sig3[:, 0], "Bias X Error (deg/s)")
+    filter_plot(t_array, bias_error[:, 0], bias_sig3[:, 0], "Bias X Error (deg/s)", scale=1.5)
     plt.title("Gyro Bias Estimation Errors")
 
     plt.subplot(3, 1, 2)
-    filter_plot(t_array, bias_error[:, 1], bias_sig3[:, 1], "Bias Y Error (deg/s)")
+    filter_plot(t_array, bias_error[:, 1], bias_sig3[:, 1], "Bias Y Error (deg/s)", scale=1.5)
 
     plt.subplot(3, 1, 3)
-    filter_plot(t_array, bias_error[:, 2], bias_sig3[:, 2], "Bias Z Error (deg/s)")
+    filter_plot(t_array, bias_error[:, 2], bias_sig3[:, 2], "Bias Z Error (deg/s)", scale=1.5)
     plt.show()
 
 
